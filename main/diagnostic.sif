@@ -1,0 +1,310 @@
+check keywords silent
+echo off
+
+! For SIA. Equation (8.34) from Cuffey and Paterson (2010).
+! u(z) = 2A/(n+1)*(rho_i*g*sin(a))^n * (H^(n+1) - (H-z)^(n+1))
+! A = A2*exp(-Q2/(R*T)), and T = 273.15 K.
+!---LUA BEGIN
+! function SIAvelocity_x(d, h)
+!   yearinsec = 365.25*24*60*60
+!   v = 0.5*2.4e-24*(917*9.81*math.sin(#I#*pi/180))^3*((d+h)^4 - d^4)
+!   return math.cos(#I#*pi/180)*v*yearinsec
+! end
+!
+! function SIAvelocity_z(d, h)
+!   yearinsec = 365.25*24*60*60
+!   v = 0.5*2.4e-24*(917*9.81*math.sin(#I#*pi/180))^3*((d+h)^4 - d^4)
+!   return -math.sin(#I#*pi/180)*v*yearinsec
+! end
+!---LUA END
+
+! Define the parameter in Mpa - a - m
+#yearinsec = 365.25*24*60*60
+#rhoi      = 917.0/(1.0e6*yearinsec^2)
+#gravity   = -9.81*yearinsec^2
+
+! Prefactor from Cuffey and Paterson (2010), sections 3.4.5 and 3.4.6, in MPa^{-3} a^{-1}, i.e A_0 in A = A_0*exp(-Q/RT)
+#A1 = 2.89165e-13*yearinsec*1.0e18 
+#A2 = 2.42736e-02*yearinsec*1.0e18
+#Q1 = 60.0e3
+#Q2 = 115.0e3
+
+Header
+  Mesh DB "." "#geo#"
+End
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!    Simulation    !!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Simulation
+  Coordinate System  = Cartesian 3D 
+  Simulation Type    = Steady        
+
+  Steady State Min Iterations = 1
+  Steady State Max Iterations = 1
+
+  Output File = "#geo#_diagnostic.result"
+  Post File   = "#geo#_diagnostic.vtu"
+  
+  max output level = 3 
+End
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!    Bodies    !!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+! The ice 
+Body 1
+  Equation          = 1
+  Body Force        = 1
+  Material          = 1
+  Initial Condition = 1
+End
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!    Initial Conditions    !!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Initial Condition 1
+  Velocity 1 = Real 0.0
+  Velocity 2 = Real 0.0
+  Velocity 3 = Real 0.0
+End
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!    Body forces    !!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Body Force 1
+  Flow BodyForce 1 = Real 0.0
+  Flow BodyForce 2 = Real 0.0
+  Flow BodyForce 3 = Real #gravity
+End
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!    Materials    !!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Material 1
+  Density                 = Real #rhoi
+  Viscosity Model         = String "glen"
+  Viscosity               = 1.0 ! Dummy but avoid warning output
+  Glen Exponent           = Real 3.0
+  Rate Factor 1           = Real #A1
+  Rate Factor 2           = Real #A2
+  Activation Energy 1     = Real #Q1 
+  Activation Energy 2     = Real #Q2  
+  Glen Enhancement Factor = Real 1.0
+  Critical Shear Rate     = Real 1.0e-10
+  Cauchy                  = Logical True
+  Constant Temperature    = Real 273.15
+End
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!    Solvers    !!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Solver 1
+  Exec Solver = "Before Simulation"
+  Equation = "Read DEMs"
+
+  Procedure = "ElmerIceSolvers" "Grid2DInterpolator"
+
+  ! Bedrock DEM
+  Variable 1 = String "BedDEM"
+  Variable 1 data file = File "Z_bed.dat"
+  Variable 1 x0 = Real #x0#
+  Variable 1 y0 = Real #y0#
+  Variable 1 lx = Real #lx#
+  Variable 1 ly = Real #ly# 
+  Variable 1 Nx = Integer #Nx#
+  Variable 1 Ny = Integer #Ny#
+  Variable 1 Invert = Logical False 
+  Variable 1 Fill = Logical False 
+  Variable 1 Position Tol = Real 1.0e-1
+  Variable 1 No Data = Real -9999.0
+  Variable 1 No Data Tol = Real 1.0 
+End
+
+
+
+Solver 2
+  Equation             = "Navier-Stokes"
+  Stabilization Method = String Stabilized
+  Flow Model           = Stokes
+  
+  Exported Variable 1 = -dofs 1 "BedDEM"
+
+  Linear System Solver                = Iterative
+  Linear System Iterative Method      = BICGStab
+  Linear System Preconditioning       = ILU1
+  Linear System Convergence Tolerance = Real 1.0e-8
+  Linear System Max Iterations        = 500
+  Linear System Residual Output       = 500
+  Linear System Abort Not Converged   = True 
+
+  Nonlinear System Max Iterations          = 50
+  Nonlinear System Convergence Tolerance   = 1.0e-5
+  Nonlinear System Newton After Iterations = 5
+  Nonlinear System Newton After Tolerance  = 1.0e-02
+  Nonlinear System Relaxation Factor       = 1.00
+
+  Steady State Convergence Tolerance = Real 1.0e-3
+End
+
+
+
+Solver 3
+  Equation             = "Sij"
+  Procedure            = "ElmerIceSolvers" "ComputeDevStress"          
+  Variable             = -nooutput "Sij"
+  Variable DOFs        = 1
+  Exported Variable 1  = -dofs 6 "Stress"
+  Stress Variable Name = String "Stress"
+  Flow Solver Name     = String "Flow Solution"
+  
+  Linear System Solver        = Direct
+  Linear System Direct Method = umfpack
+End
+
+
+
+Solver 4
+  Equation      = "EigenStresses"
+  Procedure     = "ElmerIceSolvers" "ComputeEigenValues"
+  Variable      = -nooutput dumy
+  Variable DOFs = 1
+  
+  Tensor Variable Name     = String "Stress"
+
+  ! The 3 eigenvalues
+  Exported Variable 1      = EigenStress
+  Exported Variable 1 DOFS = 3
+
+  ! The 3 eigenvectors (Option)
+  Exported Variable 2      = EigenVector1
+  Exported Variable 2 DOFS = 3
+  Exported Variable 3      = EigenVector2
+  Exported Variable 3 DOFS =  3
+  Exported Variable 4      = EigenVector3
+  Exported Variable 4 DOFS = 3
+End
+
+
+
+Solver 5
+  Exec Solver                 = "Before Simulation"
+  Equation                    = "Flowdepth"
+  Procedure                   = File "ElmerIceSolvers" "FlowDepthSolver"
+  Variable                    = String "Depth"
+  Variable DOFs               = 1
+  Linear System Solver        = "Direct"
+  Linear System Direct Method = "Umfpack"
+  Gradient                    = Real -1.0e00
+  Calc Free Surface           = Logical False
+End
+
+
+
+Solver 6
+  Exec Solver                 = "Before Simulation"
+  Equation                    = "Flowheight"
+  Procedure                   = File "ElmerIceSolvers" "FlowDepthSolver"
+  Variable                    = String "Height"
+  Variable DOFs               = 1
+  Linear System Solver        = "Direct"
+  Linear System Direct Method = "Umfpack"
+  Gradient                    = Real 1.0e00
+  Calc Free Surface           = Logical False
+End
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!    Equations    !!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Equation 1
+  Active Solvers(6) = 1 2 3 4 5 6
+End
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!    Boundary conditions    !!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+! Bedrock 
+Boundary Condition 1
+  Target Boundaries = 1
+  
+  Height = Real 0.0
+
+  ! No sliding
+  Velocity 1 = Real 0.0
+  Velocity 2 = Real 0.0
+  Velocity 3 = Real 0.0
+
+  ! Check whether the point is within the void or not
+  Velocity 1 Condition = Variable Coordinate 3, BedDEM
+    Real LUA "(function() if tx[0] > (tx[1]+0.01) then return -1.0 else return 1.0 end end)()"
+  Velocity 2 Condition = Variable Coordinate 3, BedDEM
+    Real LUA "(function() if tx[0] > (tx[1]+0.01) then return -1.0 else return 1.0 end end)()"
+  Velocity 3 Condition = Variable Coordinate 3, BedDEM
+    Real LUA "(function() if tx[0] > (tx[1]+0.01) then return -1.0 else return 1.0 end end)()"
+End
+
+! x = 0 boundary 
+Boundary Condition 2
+  Target Boundaries = 2
+  
+  Velocity 1 = Variable Depth, Height
+    Real LUA "SIAvelocity_x(tx[0], tx[1])"
+  Velocity 2 = Real 0.0
+  Velocity 3 = Variable Depth, Height
+    Real LUA "SIAvelocity_z(tx[0], tx[1])"
+End
+
+! y = y_max boundary
+Boundary Condition 3
+  Target Boundaries = 3
+  
+  Velocity 2 = Real 0.0
+End
+
+! x = x_max boundary
+Boundary Condition 4
+  Target Boundaries = 4
+  
+  Velocity 1 = Variable Depth, Height
+    Real LUA "SIAvelocity_x(tx[0], tx[1])"
+  Velocity 2 = Real 0.0
+  Velocity 3 = Variable Depth, Height
+    Real LUA "SIAvelocity_z(tx[0], tx[1])"
+End
+
+! y = 0 boundary
+Boundary Condition 5
+  Target Boundaries = 5
+  
+  Velocity 2 = Real 0.0
+End
+
+! Upper Surface
+Boundary Condition 6
+  Target Boundaries = 6
+  
+  Depth = Real 0.0
+End
