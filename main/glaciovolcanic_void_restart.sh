@@ -65,7 +65,7 @@ f_mesh_void="${DIR_temp}/surf101.stl"
 
 # The python files.
 p_vtu2msh="${pdir}/main/vtu2msh.py"
-p_remesh="${pdir}/main/remesh_deformed.py"
+p_remesh="${pdir}/main/remesh.py"
 
 
 
