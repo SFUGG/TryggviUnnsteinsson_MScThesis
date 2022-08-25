@@ -65,7 +65,7 @@ f_mesh_void="${DIR_temp}/surf101.stl"
 
 # The python files.
 p_create_geometry="${pdir}/main/create_geometry.py"
-p_remesh="${pdir}/main/remesh_deformed.py"
+p_remesh="${pdir}/main/remesh.py"
 
 
 
