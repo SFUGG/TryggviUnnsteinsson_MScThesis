@@ -1,7 +1,7 @@
 # Modelling glaciovolcanic caves and chimneys - MSc Thesis (Simon Fraser University)
 ## Tryggvi Unnsteinsson
 
-This folder contains the code we used to investigate the formation and melt-through of glaciovolcanic voids in chapter 3 of my MSc thesis.
+This folder contains the code we used to investigate the formation and melt-through of glaciovolcanic voids in chapter 3 of my [MSc thesis](https://summit.sfu.ca/item/35247). 
 
 `define_variables.sh` - A file that takes in the user inputs of the desired physical parameters, imports them to the appropriate files and preps the working directory for simulation.
 
